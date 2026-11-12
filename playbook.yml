@@ -1,0 +1,2 @@
+- name: mac-mini-m4-16
+  hosts: mac-mini-m4-16
