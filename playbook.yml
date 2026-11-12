@@ -5,6 +5,14 @@
       sleep: 0
       disksleep: 0
       autorestart: 1
+    drives:
+      - /Volumes/Media-1
+      - /Volumes/Media-2
+      - /Volumes/Sabrent
+      - /Volumes/Samsung T5
+      - /Volumes/Samsung T7
+      - /Volumes/Crucial 1000GB
+      - /Volumes/Kingston 480GB
 
   tasks:
     - name: Install Tart
@@ -27,3 +35,19 @@
       become: true
       loop: "{{ power_settings | dict2items }}"
       when: pmset_current.stdout is not search('(?m)^\\s*' ~ item.key ~ '\\s+' ~ item.value ~ '(\\s|$)')
+
+    - name: Read Spotlight indexing on the drives
+      ansible.builtin.command:
+        argv: [mdutil, -s, "{{ item }}"]
+      loop: "{{ drives }}"
+      register: spotlight_status
+      changed_when: false
+
+    - name: Turn Spotlight indexing off on the drives
+      ansible.builtin.command:
+        argv: [mdutil, -i, "off", "{{ item.item }}"]
+      become: true
+      loop: "{{ spotlight_status.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: "'Indexing disabled.' not in item.stdout"
