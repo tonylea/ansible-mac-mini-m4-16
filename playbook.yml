@@ -1,2 +1,200 @@
 - name: mac-mini-m4-16
   hosts: mac-mini-m4-16
+  vars:
+    power_settings:
+      sleep: 0
+      disksleep: 0
+      autorestart: 1
+    drives:
+      - name: media-1
+        path: /Volumes/Media-1
+      - name: media-2
+        path: /Volumes/Media-2
+      - name: sabrent
+        path: /Volumes/Sabrent
+      - name: samsung-t5
+        path: /Volumes/Samsung T5
+      - name: samsung-t7
+        path: /Volumes/Samsung T7
+      - name: crucial-1000gb
+        path: /Volumes/Crucial 1000GB
+      - name: kingston-480gb
+        path: /Volumes/Kingston 480GB
+    debian_image_url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw
+    debian_checksums_url: https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS
+    debian_image: "{{ ansible_env.HOME }}/.tart/debian-13-generic-arm64.raw"
+    vm_name: k3s-node-vm-01
+    vm_dir: "{{ ansible_env.HOME }}/.tart/vms/{{ vm_name }}"
+    vm_cpu: 8
+    vm_memory_mb: 8192
+    vm_root_disk_gb: 20
+    vm_longhorn_disk_bytes: 50000000000
+    vm_mac: 62:e1:f9:c9:e3:23
+    vm_bridged_interface: en7
+    vm_ssh_authorized_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBEzruTfhOBRKO5MxKv1+IKmiC1l7bYfn1KaLWBgpDif
+    vm_settings: "{{ vm_settings_json.stdout | from_json }}"
+    launch_agent_label: uk.deadrobot.tart.{{ vm_name }}
+
+  tasks:
+    - name: Install Tart
+      community.general.homebrew:
+        name: openai/tools/tart
+        state: latest
+
+    - name: Install Plex
+      community.general.homebrew_cask:
+        name: plex-media-server
+        state: present
+
+    - name: Read power settings
+      ansible.builtin.command: pmset -g
+      register: pmset_current
+      changed_when: false
+
+    - name: Set power settings
+      ansible.builtin.command: pmset -a {{ item.key }} {{ item.value }}
+      become: true
+      loop: "{{ power_settings | dict2items }}"
+      when: pmset_current.stdout is not search('(?m)^\\s*' ~ item.key ~ '\\s+' ~ item.value ~ '(\\s|$)')
+
+    - name: Read Spotlight indexing on the drives
+      ansible.builtin.command:
+        argv: [mdutil, -s, "{{ item.path }}"]
+      loop: "{{ drives }}"
+      register: spotlight_status
+      changed_when: false
+
+    - name: Turn Spotlight indexing off on the drives
+      ansible.builtin.command:
+        argv: [mdutil, -i, "off", "{{ item.item.path }}"]
+      become: true
+      loop: "{{ spotlight_status.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: "'Indexing disabled.' not in item.stdout"
+
+    - name: Check whether the VM exists
+      ansible.builtin.stat:
+        path: "{{ vm_dir }}/config.json"
+      register: vm_config
+
+    - name: Create the VM from Debian's image
+      when: not vm_config.stat.exists
+      block:
+        - name: Download Debian's image
+          ansible.builtin.get_url:
+            url: "{{ debian_image_url }}"
+            dest: "{{ debian_image }}"
+            checksum: sha512:{{ debian_checksums_url }}
+            mode: "0644"
+
+        - name: Create the VM
+          ansible.builtin.command:
+            argv: [tart, create, --linux, "{{ vm_name }}"]
+
+        - name: Load Debian's image as the VM's root disk
+          ansible.builtin.command:
+            argv: [tart, set, "{{ vm_name }}", --disk, "{{ debian_image }}"]
+
+        - name: Grow the VM's root disk
+          ansible.builtin.command:
+            argv: [tart, set, "{{ vm_name }}", --disk-size, "{{ vm_root_disk_gb }}"]
+      rescue:
+        - name: Delete the half-made VM
+          ansible.builtin.command:
+            argv: [tart, delete, "{{ vm_name }}"]
+          failed_when: false
+
+        - name: Stop after a failed VM creation
+          ansible.builtin.fail:
+            msg: Creating {{ vm_name }} failed; the half-made VM is deleted, so the next run starts again.
+      always:
+        - name: Delete Debian's image
+          ansible.builtin.file:
+            path: "{{ debian_image }}"
+            state: absent
+
+    - name: Read the VM's settings
+      ansible.builtin.command:
+        argv: [tart, get, "{{ vm_name }}", --format, json]
+      register: vm_settings_json
+      changed_when: false
+
+    - name: Set the VM's CPUs, memory and MAC
+      ansible.builtin.command:
+        argv:
+          - tart
+          - set
+          - "{{ vm_name }}"
+          - --cpu
+          - "{{ vm_cpu }}"
+          - --memory
+          - "{{ vm_memory_mb }}"
+          - --mac
+          - "{{ vm_mac }}"
+      when: >-
+        vm_settings.CPU != vm_cpu
+        or vm_settings.Memory != vm_memory_mb
+        or vm_settings.MACAddress != vm_mac
+      notify: Restart the VM
+
+    - name: Create the Longhorn disk
+      ansible.builtin.command:
+        argv: [mkfile, -n, "{{ vm_longhorn_disk_bytes }}", "{{ vm_dir }}/longhorn.img"]
+        creates: "{{ vm_dir }}/longhorn.img"
+
+    - name: Create the seed folder
+      ansible.builtin.file:
+        path: "{{ vm_dir }}/seed"
+        state: directory
+        mode: "0755"
+
+    - name: Write the seed's cloud-init files
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "{{ vm_dir }}/seed/{{ item }}"
+        mode: "0644"
+      loop: [user-data, meta-data]
+      register: seed_files
+
+    - name: Check whether the seed ISO exists
+      ansible.builtin.stat:
+        path: "{{ vm_dir }}/seed.iso"
+      register: seed_iso
+
+    - name: Build the seed ISO
+      ansible.builtin.command:
+        argv:
+          - hdiutil
+          - makehybrid
+          - -iso
+          - -joliet
+          - -default-volume-name
+          - cidata
+          - -ov
+          - -o
+          - "{{ vm_dir }}/seed.iso"
+          - "{{ vm_dir }}/seed"
+      when: seed_files is changed or not seed_iso.stat.exists
+      notify: Restart the VM
+
+    - name: Write the VM's LaunchAgent
+      ansible.builtin.template:
+        src: launch-agent.plist.j2
+        dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/{{ launch_agent_label }}.plist"
+        mode: "0644"
+      notify: Restart the VM
+
+    - name: Apply changes to the VM
+      ansible.builtin.meta: flush_handlers
+
+    - name: Start the VM
+      community.general.launchd:
+        name: "{{ launch_agent_label }}"
+        state: started
+
+  handlers:
+    - name: Restart the VM
+      community.general.launchd:
+        name: "{{ launch_agent_label }}"
+        state: reloaded
