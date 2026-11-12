@@ -1,2 +1,12 @@
 - name: mac-mini-m4-16
   hosts: mac-mini-m4-16
+  tasks:
+    - name: Install Tart
+      community.general.homebrew:
+        name: openai/tools/tart
+        state: latest
+
+    - name: Install Plex
+      community.general.homebrew_cask:
+        name: plex-media-server
+        state: present
