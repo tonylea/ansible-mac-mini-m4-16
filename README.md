@@ -10,7 +10,7 @@ brew install ansible
 git clone git@github.com:tonylea/ansible-mac-mini-m4-16.git
 cd ansible-mac-mini-m4-16
 ansible-galaxy install -r requirements.yml
-ansible-playbook playbook.yml --ask-become-pass
+ansible-playbook playbook.yml
 ```
 
 ## Later runs
@@ -18,5 +18,5 @@ ansible-playbook playbook.yml --ask-become-pass
 ```sh
 git pull
 ansible-galaxy install -r requirements.yml
-ansible-playbook playbook.yml --ask-become-pass
+ansible-playbook playbook.yml
 ```
