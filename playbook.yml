@@ -22,6 +22,7 @@
     vm_memory_mb: 8192
     vm_root_disk_gb: 20
     vm_longhorn_disk_bytes: 50000000000
+    vm_ssh_authorized_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBEzruTfhOBRKO5MxKv1+IKmiC1l7bYfn1KaLWBgpDif
     vm_mac: 62:e1:f9:c9:e3:23
     vm_settings: "{{ vm_settings_json.stdout | from_json }}"
 
@@ -131,3 +132,37 @@
       ansible.builtin.command:
         argv: [mkfile, -n, "{{ vm_longhorn_disk_bytes }}", "{{ vm_dir }}/longhorn.img"]
         creates: "{{ vm_dir }}/longhorn.img"
+
+    - name: Create the seed folder
+      ansible.builtin.file:
+        path: "{{ vm_dir }}/seed"
+        state: directory
+        mode: "0755"
+
+    - name: Write the seed's cloud-init files
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "{{ vm_dir }}/seed/{{ item }}"
+        mode: "0644"
+      loop: [user-data, meta-data]
+      register: seed_files
+
+    - name: Check whether the seed ISO exists
+      ansible.builtin.stat:
+        path: "{{ vm_dir }}/seed.iso"
+      register: seed_iso
+
+    - name: Build the seed ISO
+      ansible.builtin.command:
+        argv:
+          - hdiutil
+          - makehybrid
+          - -iso
+          - -joliet
+          - -default-volume-name
+          - cidata
+          - -ov
+          - -o
+          - "{{ vm_dir }}/seed.iso"
+          - "{{ vm_dir }}/seed"
+      when: seed_files is changed or not seed_iso.stat.exists
