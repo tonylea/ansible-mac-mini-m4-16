@@ -25,6 +25,8 @@
     vm_ssh_authorized_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBEzruTfhOBRKO5MxKv1+IKmiC1l7bYfn1KaLWBgpDif
     vm_mac: 62:e1:f9:c9:e3:23
     vm_settings: "{{ vm_settings_json.stdout | from_json }}"
+    vm_bridged_interface: en7
+    launch_agent_label: uk.deadrobot.tart.{{ vm_name }}
 
   tasks:
     - name: Install Tart
@@ -127,6 +129,7 @@
         vm_settings.CPU != vm_cpu
         or vm_settings.Memory != vm_memory_mb
         or vm_settings.MACAddress != vm_mac
+      notify: Restart the VM
 
     - name: Create the Longhorn disk
       ansible.builtin.command:
@@ -166,3 +169,24 @@
           - "{{ vm_dir }}/seed.iso"
           - "{{ vm_dir }}/seed"
       when: seed_files is changed or not seed_iso.stat.exists
+
+    - name: Write the VM's LaunchAgent
+      ansible.builtin.template:
+        src: launch-agent.plist.j2
+        dest: "{{ ansible_facts['env']['HOME'] }}/Library/LaunchAgents/{{ launch_agent_label }}.plist"
+        mode: "0644"
+      notify: Restart the VM
+
+    - name: Apply changes to the VM
+      ansible.builtin.meta: flush_handlers
+
+    - name: Start the VM
+      community.general.launchd:
+        name: "{{ launch_agent_label }}"
+        state: started
+
+  handlers:
+    - name: Restart the VM
+      community.general.launchd:
+        name: "{{ launch_agent_label }}"
+        state: reloaded
