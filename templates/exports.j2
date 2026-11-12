@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+{% for drive in drives %}
+{% for net in nfs_networks %}
+"{{ drive }}" -alldirs -mapall={{ ansible_facts['user_uid'] }}:{{ ansible_facts['user_gid'] }} -network {{ net.network }} -mask {{ net.mask }}
+{% endfor %}
+{% endfor %}

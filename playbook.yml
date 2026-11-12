@@ -13,6 +13,11 @@
       - /Volumes/Samsung T7
       - /Volumes/Crucial 1000GB
       - /Volumes/Kingston 480GB
+    nfs_networks:
+      - network: 192.168.10.0
+        mask: 255.255.255.0
+      - network: 192.168.30.0
+        mask: 255.255.255.0
     debian_image_url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw
     debian_checksums_url: https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS
     debian_image: "{{ ansible_facts['env']['HOME'] }}/.tart/debian-13-generic-arm64.raw"
@@ -66,6 +71,39 @@
       loop_control:
         label: "{{ item.item }}"
       when: "'Indexing disabled.' not in item.stdout"
+
+    - name: Write the NFS exports
+      ansible.builtin.template:
+        src: exports.j2
+        dest: /etc/exports
+        owner: root
+        group: wheel
+        mode: "0644"
+        validate: nfsd -F %s checkexports
+      become: true
+      notify: Reload the NFS exports
+
+    - name: Write the NFS settings
+      ansible.builtin.template:
+        src: nfs.conf.j2
+        dest: /etc/nfs.conf
+        owner: root
+        group: wheel
+        mode: "0644"
+      become: true
+      notify: Restart nfsd
+
+    - name: Read whether nfsd is enabled
+      ansible.builtin.command: nfsd status
+      become: true
+      register: nfsd_status
+      changed_when: false
+      failed_when: false
+
+    - name: Enable nfsd
+      ansible.builtin.command: nfsd enable
+      become: true
+      when: nfsd_status.rc != 0
 
     - name: Read the USB adaptor's addresses
       ansible.builtin.command:
@@ -212,6 +250,14 @@
         state: started
 
   handlers:
+    - name: Reload the NFS exports
+      ansible.builtin.command: nfsd update
+      become: true
+
+    - name: Restart nfsd
+      ansible.builtin.command: nfsd restart
+      become: true
+
     - name: Restart the VM
       community.general.launchd:
         name: "{{ launch_agent_label }}"
