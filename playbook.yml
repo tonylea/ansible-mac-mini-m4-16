@@ -170,6 +170,12 @@
           - "{{ vm_dir }}/seed"
       when: seed_files is changed or not seed_iso.stat.exists
 
+    - name: Create the LaunchAgents folder
+      ansible.builtin.file:
+        path: "{{ ansible_facts['env']['HOME'] }}/Library/LaunchAgents"
+        state: directory
+        mode: "0755"
+
     - name: Write the VM's LaunchAgent
       ansible.builtin.template:
         src: launch-agent.plist.j2
