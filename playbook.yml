@@ -21,6 +21,7 @@
     vm_cpu: 8
     vm_memory_mb: 8192
     vm_root_disk_gb: 20
+    vm_longhorn_disk_bytes: 50000000000
     vm_mac: 62:e1:f9:c9:e3:23
     vm_settings: "{{ vm_settings_json.stdout | from_json }}"
 
@@ -125,3 +126,8 @@
         vm_settings.CPU != vm_cpu
         or vm_settings.Memory != vm_memory_mb
         or vm_settings.MACAddress != vm_mac
+
+    - name: Create the Longhorn disk
+      ansible.builtin.command:
+        argv: [mkfile, -n, "{{ vm_longhorn_disk_bytes }}", "{{ vm_dir }}/longhorn.img"]
+        creates: "{{ vm_dir }}/longhorn.img"
