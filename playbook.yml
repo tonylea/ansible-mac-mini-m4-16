@@ -13,6 +13,16 @@
       - /Volumes/Samsung T7
       - /Volumes/Crucial 1000GB
       - /Volumes/Kingston 480GB
+    debian_image_url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw
+    debian_checksums_url: https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS
+    debian_image: "{{ ansible_env.HOME }}/.tart/debian-13-generic-arm64.raw"
+    vm_name: k3s-node-vm-01
+    vm_dir: "{{ ansible_env.HOME }}/.tart/vms/{{ vm_name }}"
+    vm_cpu: 8
+    vm_memory_mb: 8192
+    vm_root_disk_gb: 20
+    vm_mac: 62:e1:f9:c9:e3:23
+    vm_settings: "{{ vm_settings_json.stdout | from_json }}"
 
   tasks:
     - name: Install Tart
@@ -51,3 +61,67 @@
       loop_control:
         label: "{{ item.item }}"
       when: "'Indexing disabled.' not in item.stdout"
+
+    - name: Check whether the VM exists
+      ansible.builtin.stat:
+        path: "{{ vm_dir }}/config.json"
+      register: vm_config
+
+    - name: Create the VM from Debian's image
+      when: not vm_config.stat.exists
+      block:
+        - name: Download Debian's image
+          ansible.builtin.get_url:
+            url: "{{ debian_image_url }}"
+            dest: "{{ debian_image }}"
+            checksum: sha512:{{ debian_checksums_url }}
+            mode: "0644"
+
+        - name: Create the VM
+          ansible.builtin.command:
+            argv: [tart, create, --linux, "{{ vm_name }}"]
+
+        - name: Load Debian's image as the VM's root disk
+          ansible.builtin.command:
+            argv: [tart, set, "{{ vm_name }}", --disk, "{{ debian_image }}"]
+
+        - name: Grow the VM's root disk
+          ansible.builtin.command:
+            argv: [tart, set, "{{ vm_name }}", --disk-size, "{{ vm_root_disk_gb }}"]
+      rescue:
+        - name: Delete the half-made VM
+          ansible.builtin.command:
+            argv: [tart, delete, "{{ vm_name }}"]
+          failed_when: false
+
+        - name: Stop after a failed VM creation
+          ansible.builtin.fail:
+            msg: Creating {{ vm_name }} failed; the half-made VM is deleted, so the next run starts again.
+      always:
+        - name: Delete Debian's image
+          ansible.builtin.file:
+            path: "{{ debian_image }}"
+            state: absent
+
+    - name: Read the VM's settings
+      ansible.builtin.command:
+        argv: [tart, get, "{{ vm_name }}", --format, json]
+      register: vm_settings_json
+      changed_when: false
+
+    - name: Set the VM's CPUs, memory and MAC
+      ansible.builtin.command:
+        argv:
+          - tart
+          - set
+          - "{{ vm_name }}"
+          - --cpu
+          - "{{ vm_cpu }}"
+          - --memory
+          - "{{ vm_memory_mb }}"
+          - --mac
+          - "{{ vm_mac }}"
+      when: >-
+        vm_settings.CPU != vm_cpu
+        or vm_settings.Memory != vm_memory_mb
+        or vm_settings.MACAddress != vm_mac
