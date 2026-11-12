@@ -26,6 +26,7 @@
     vm_mac: 62:e1:f9:c9:e3:23
     vm_settings: "{{ vm_settings_json.stdout | from_json }}"
     vm_bridged_interface: en7
+    vm_bridged_service: USB 10/100/1000 LAN
     launch_agent_label: uk.deadrobot.tart.{{ vm_name }}
 
   tasks:
@@ -65,6 +66,25 @@
       loop_control:
         label: "{{ item.item }}"
       when: "'Indexing disabled.' not in item.stdout"
+
+    - name: Read the USB adaptor's addresses
+      ansible.builtin.command:
+        argv: [ifconfig, "{{ vm_bridged_interface }}"]
+      register: bridged_ifconfig
+      changed_when: false
+
+    - name: Keep macOS's own addresses off the USB adaptor
+      ansible.builtin.command:
+        argv: [networksetup, "{{ item.command }}", "{{ vm_bridged_service }}"]
+      become: true
+      loop:
+        - family: inet
+          command: -setv4off
+        - family: inet6
+          command: -setv6off
+      loop_control:
+        label: "{{ item.family }}"
+      when: bridged_ifconfig.stdout is search('(?m)^\\s+' ~ item.family ~ ' ')
 
     - name: Check whether the VM exists
       ansible.builtin.stat:
