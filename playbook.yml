@@ -1,5 +1,5 @@
 - name: mac-mini-m4-16
-  hosts: mac-mini-m4-16
+  hosts: localhost
   vars:
     power_settings:
       sleep: 0
