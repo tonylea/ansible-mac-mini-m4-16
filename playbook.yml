@@ -16,7 +16,6 @@
       community.general.homebrew_cask:
         name: plex-media-server
         state: present
-        install_options: force
 
     - name: Read power settings
       ansible.builtin.command: pmset -g
