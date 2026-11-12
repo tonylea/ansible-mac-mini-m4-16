@@ -1,5 +1,11 @@
 - name: mac-mini-m4-16
   hosts: mac-mini-m4-16
+  vars:
+    power_settings:
+      sleep: 0
+      disksleep: 0
+      autorestart: 1
+
   tasks:
     - name: Install Tart
       community.general.homebrew:
@@ -11,3 +17,14 @@
         name: plex-media-server
         state: present
         install_options: force
+
+    - name: Read power settings
+      ansible.builtin.command: pmset -g
+      register: pmset_current
+      changed_when: false
+
+    - name: Set power settings
+      ansible.builtin.command: pmset -a {{ item.key }} {{ item.value }}
+      become: true
+      loop: "{{ power_settings | dict2items }}"
+      when: pmset_current.stdout is not search('(?m)^\\s*' ~ item.key ~ '\\s+' ~ item.value ~ '(\\s|$)')
