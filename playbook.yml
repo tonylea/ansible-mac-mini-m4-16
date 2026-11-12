@@ -10,3 +10,4 @@
       community.general.homebrew_cask:
         name: plex-media-server
         state: present
+        install_options: force
