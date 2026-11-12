@@ -15,9 +15,9 @@
       - /Volumes/Kingston 480GB
     debian_image_url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw
     debian_checksums_url: https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS
-    debian_image: "{{ ansible_env.HOME }}/.tart/debian-13-generic-arm64.raw"
+    debian_image: "{{ ansible_facts['env']['HOME'] }}/.tart/debian-13-generic-arm64.raw"
     vm_name: k3s-node-vm-01
-    vm_dir: "{{ ansible_env.HOME }}/.tart/vms/{{ vm_name }}"
+    vm_dir: "{{ ansible_facts['env']['HOME'] }}/.tart/vms/{{ vm_name }}"
     vm_cpu: 8
     vm_memory_mb: 8192
     vm_root_disk_gb: 20
